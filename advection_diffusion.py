@@ -20,10 +20,9 @@ diffusivity = 0.05
 t_stop = 0.25
 N = 81
 M = 50
-x = np.linspace(0.0, 1.0, N)
-t = np.linspace(0, t_stop, M+1)
 dx = 1.0 / (N-1)
 dt = t_stop / M
+t = np.linspace(0, t_stop, M+1)
 
 
 # === Numpy version of the simulation ========================================
@@ -35,12 +34,15 @@ def index_function(i, j, N):
 
 
 def initial_condition(x, y):
+  # initial condition for the pollution
   return 2.0*np.exp(-100.0*((x-0.25)**2+(y-0.25)**2))+np.exp(-150.0*((x-0.65)**2+(y-0.4)**2))
 
 
-def do_simulation(W, theta):
+def do_simulation(x):
   # Solve the advection-diffusion equation using a finite difference method
   # Keep track of the pollution
+  W = x[0]
+  theta = x[1]
 
   # Construct the matrix (D) for the linear system to be solved at each time step
   D = np.eye(N**2, N**2)
@@ -56,10 +58,11 @@ def do_simulation(W, theta):
   B = splu(D)        # do an LU decomposition of the matrix
 
   # Construct initial (t=0) solution
+  xlin = np.linspace(0.0, 1.0, N)
   U = np.zeros(N**2)
   for i in range(1, N-1):
     for j in range(1, N-1):
-      U[index_function(i,j,N)] = initial_condition(x[i], x[j])
+      U[index_function(i,j,N)] = initial_condition(xlin[i], xlin[j])
 
   # Keep track of pollution
   pollution = np.zeros(M+1)
@@ -79,9 +82,7 @@ def do_simulation(W, theta):
 
 def loss(x, info):
   # loss function that wraps the simulation
-  W = x[0]
-  theta = x[1]
-  U, pollution, pollution_total = do_simulation(W, theta)
+  _, _, pollution_total = do_simulation(x)
 
   # display information
   print('{0:4d}   {1: 3.6f}   {2: 3.6f} {3: 3.6f}'.format(info['Nfeval'], W, theta, pollution_total))
@@ -94,12 +95,17 @@ def loss(x, info):
 
 @jit
 def initial_condition_jax(x, y):
+  # initial condition for the pollution -- JAX version
   return 2.0*jnp.exp(-100.0*((x-0.25)**2+(y-0.25)**2))+jnp.exp(-150.0*((x-0.65)**2+(y-0.4)**2))
 
 
-def do_simulation_jax(W, theta):
-  # Solve the advection-diffusion equation using a finite difference method
+@jit
+def do_simulation_jax(x):
+  # Solve the advection-diffusion equation with finite difference -- JAX version
   # Keep track of the pollution
+
+  W = x[0]
+  theta = x[1]
 
   # Construct the matrix (D) for the linear system to be solved at each time step
   main_diag = jnp.ones(N**2)  * dt*(1.0/dt + 4.0*diffusivity/dx**2)
@@ -146,11 +152,10 @@ def do_simulation_jax(W, theta):
   return U, pollution, pollution_total
 
 
-# loss function that wraps the simulation (jax version)
+@jit
 def loss_jax(x):
-  W = x[0]
-  theta = x[1]
-  U, pollution, pollution_total = do_simulation_jax(W, theta)
+  # loss function that wraps the simulation (jax version)
+  _, _, pollution_total = do_simulation_jax(x)
 
   return -pollution_total
 
@@ -174,7 +179,12 @@ def main():
   print('Optimized wind parameters:', W, theta)
 
   # Carry out simulation with the optimized parameters
-  U, pollution, pollution_total = do_simulation_jax(W, theta)
+  start = timeit.default_timer()
+  U, pollution, pollution_total = do_simulation_jax(x0)
+  print("JAX took:", timeit.default_timer() - start, "seconds")
+  start = timeit.default_timer()
+  U, pollution, pollution_total = do_simulation(x0)
+  print("Numpy took:", timeit.default_timer() - start, "seconds")
 
   # XXX
   start = timeit.default_timer()
@@ -212,7 +222,7 @@ def main():
   ax.set_aspect('equal')
 
   # Save figure
-  plt.savefig('simulation_autodiff.png',dpi=240)
+  plt.savefig('simulation.png',dpi=240)
   plt.show()
 
   return 0
