@@ -5,7 +5,8 @@ from scipy.optimize import minimize
 
 import jax
 import jax.numpy as jnp
-from jax import grad, jit
+from jax import jit
+from jaxopt import ScipyBoundedMinimize
 
 import matplotlib.pyplot as plt
 import timeit
@@ -85,7 +86,7 @@ def loss(x, info):
   _, _, pollution_total = do_simulation(x)
 
   # display information
-  print('{0:4d}   {1: 3.6f}   {2: 3.6f} {3: 3.6f}'.format(info['Nfeval'], W, theta, pollution_total))
+  print('{0:4d}   {1: 3.6f}   {2: 3.6f} {3: 3.6f}'.format(info['Nfeval'], x[0], x[1], pollution_total))
   info['Nfeval'] += 1
 
   return -pollution_total
@@ -171,26 +172,23 @@ def main():
   # Optimize the wind parameters to find which values maximize the pollution
   x0 = np.array([W, theta])
   bounds = [(0, 3), (0, np.pi)]
+  print("Numpy Approach =======================")
   start = timeit.default_timer()
-  ###wind = minimize(loss, x0, args=({'Nfeval':0},), method='Nelder-Mead', tol=1e-8, bounds=bounds)
+  wind = minimize(loss, x0, args=({'Nfeval':0},), method='Nelder-Mead', tol=1e-8, bounds=bounds)
   print("Optimization process took:", timeit.default_timer() - start, "seconds")
-  ###W = wind.x[0]
-  ###theta = wind.x[1]
-  print('Optimized wind parameters:', W, theta)
+  print('Optimized wind parameters:', wind.x)
 
   # Carry out simulation with the optimized parameters
+  print("JAX Approach =========================")
   start = timeit.default_timer()
-  U, pollution, pollution_total = do_simulation_jax(x0)
-  print("JAX took:", timeit.default_timer() - start, "seconds")
-  start = timeit.default_timer()
-  U, pollution, pollution_total = do_simulation(x0)
-  print("Numpy took:", timeit.default_timer() - start, "seconds")
+  jbounds = ((0, 0), (3, np.pi))
+  optimizer = ScipyBoundedMinimize(fun=loss_jax, method='L-BFGS-B', tol = 1e-8)
+  sol = optimizer.run(init_params=x0, bounds=jbounds)
+  print("Optimization process took:", timeit.default_timer() - start, "seconds")
+  print('Optimized wind parameters:', sol.params)
 
-  # XXX
-  start = timeit.default_timer()
-  grad_sim = grad(loss_jax)
-  print(grad_sim(x0))
-  print("XXX took:", timeit.default_timer() - start, "seconds")
+  # Re-run the simulation with the optimized parameters
+  U, pollution, pollution_total = do_simulation_jax(sol.params)
 
   # Print the level of pollution
   print('Total pollution:', pollution_total)
