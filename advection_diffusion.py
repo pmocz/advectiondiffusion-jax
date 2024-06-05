@@ -11,16 +11,20 @@ from jaxopt import ScipyBoundedMinimize
 import matplotlib.pyplot as plt
 import timeit
 
-# Philip Mocz (2024)
-# Solve the advection-diffusion equation using a finite difference method
-# Plug it into an optimization problem to find the wind parameters that maximize pollution at the center of the domain
-# Use either Nelder-Mead (SciPy) or autodiff (JAX) to solve the optimization problem
+"""
+Create Your Own Finite Difference Automatic differentiation Simulation (With Python/JAX)
+Philip Mocz (2024), @PMocz
+
+Solve the advection-diffusion equation using a finite difference method
+Plug it into an optimization problem to find the wind parameters that maximize pollution at the center of the domain
+Use either gradient-free Nelder-Mead (Numpy/SciPy) or autodiff (JAX) to solve the optimization problem
+"""
 
 # Global variables
 W = 0.5
 diffusivity = 0.05
 t_end = 0.25
-N = 41 # XXX 81
+N = 41
 M = 50
 dx = 1.0 / (N-1)
 dt = t_end / M
@@ -91,6 +95,7 @@ def do_simulation(x):
 
     # solve the system
     U = B.solve(U)
+
     # record pollution at center of domain
     pollution[i+1] = U[ctr]
   
@@ -105,7 +110,7 @@ def loss(x, info):
   # loss function that wraps the simulation
   _, _, pollution_total = do_simulation(x)
 
-  # display information
+  # display information at each function evaluation
   print('{0:4d}   {1: 3.6f}   {2: 3.6f}   {3: 3.6f}   {4: 3.6f}   {5: 3.6f} {6: 3.6f}'.format(info['Nfeval'], x[0], x[1], x[2], x[3], x[4], pollution_total))
   info['Nfeval'] += 1
 
@@ -153,11 +158,11 @@ def do_simulation_jax(x):
   theta = x[i_wind]
 
   # Construct the matrix (D) and its LU decomposition for the linear system to be solved at each time step
-  main_diag = jnp.ones(N**2)  * dt*(1.0/dt + 4.0*diffusivity/dx**2)
-  off_diag1 = jnp.ones(N**2-1)* dt*( W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
-  off_diag2 = jnp.ones(N**2-1)* dt*(-W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
-  off_diag3 = jnp.ones(N**2-N)* dt*( W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
-  off_diag4 = jnp.ones(N**2-N)* dt*(-W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
+  main_diag = jnp.ones(N**2)   * dt*(1.0/dt + 4.0*diffusivity/dx**2)
+  off_diag1 = jnp.ones(N**2-1) * dt*( W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
+  off_diag2 = jnp.ones(N**2-1) * dt*(-W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
+  off_diag3 = jnp.ones(N**2-N) * dt*( W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
+  off_diag4 = jnp.ones(N**2-N) * dt*(-W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
   
   D = jnp.diag(main_diag) + jnp.diag(off_diag1, 1) + jnp.diag(off_diag2, -1) + jnp.diag(off_diag3, N) + jnp.diag(off_diag4, -N)
   D = D.at[bndry, :].set(0.0)
@@ -172,10 +177,10 @@ def do_simulation_jax(x):
     if(update_wind_direction):
       i_wind += 1
       theta = x[i_wind]
-      off_diag1 = jnp.ones(N**2-1)* dt*( W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
-      off_diag2 = jnp.ones(N**2-1)* dt*(-W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
-      off_diag3 = jnp.ones(N**2-N)* dt*( W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
-      off_diag4 = jnp.ones(N**2-N)* dt*(-W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
+      off_diag1 = jnp.ones(N**2-1) * dt*( W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
+      off_diag2 = jnp.ones(N**2-1) * dt*(-W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
+      off_diag3 = jnp.ones(N**2-N) * dt*( W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
+      off_diag4 = jnp.ones(N**2-N) * dt*(-W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
 
       D = jnp.diag(main_diag) + jnp.diag(off_diag1, 1) + jnp.diag(off_diag2, -1) + jnp.diag(off_diag3, N) + jnp.diag(off_diag4, -N)
       D = D.at[bndry, :].set(0.0)
@@ -211,14 +216,15 @@ def main():
 
   # Wind parameters (initial guess)
   x0 = [np.pi/2.0] * 5
+  bounds = [(0.0, np.pi)] * 5
   
   # Optimize the wind parameters to find which values maximize the pollution
-  bounds = [(0.0, np.pi)] * 5
-  print("=== Numpy Approach =======================")
+  print("=== Numpy Approach =======================================================")
   start = timeit.default_timer()
-  sol = minimize(loss, x0, args=({'Nfeval':0},), method='Nelder-Mead', tol=1e-8, bounds=bounds)
+  sol = minimize(loss, x0, args=({'Nfeval':0},), method='Nelder-Mead', tol=1e-8, bounds=bounds, options={'disp': True} )
   print("Optimization process took:", timeit.default_timer() - start, "seconds")
-  print('Optimized wind parameters:', sol.x)
+  print('Number of iterations:', sol.nit)
+  print('Optimized wind parameters:', '\033[1m', sol.x, '\033[0m')
 
   # Re-run the simulation with the optimized parameters and print the level of pollution
   start = timeit.default_timer()
@@ -227,14 +233,14 @@ def main():
   print('Total pollution:', pollution_total)
 
   # Carry out simulation with the optimized parameters
-  print("=== JAX Approach =========================")
+  print("=== JAX Approach =========================================================")
   start = timeit.default_timer()
   jbounds = [[0.0]*5, [np.pi]*5]
-  optimizer = ScipyBoundedMinimize(fun=loss_jax, method='L-BFGS-B', tol = 1e-8)
+  optimizer = ScipyBoundedMinimize(fun=loss_jax, method='L-BFGS-B', tol = 1e-8, options={'disp': True})
   sol_jax = optimizer.run(init_params=x0, bounds=jbounds)
   print("Optimization process took:", timeit.default_timer() - start, "seconds")
-  print(sol_jax)
-  print('Optimized wind parameters:', sol_jax.params)
+  print('Number of iterations:', sol_jax.state.iter_num)
+  print('Optimized wind parameters:', '\033[1m', np.array(sol_jax.params), '\033[0m')
 
   # Re-run the simulation with the optimized parameters and print the level of pollution
   start = timeit.default_timer()
