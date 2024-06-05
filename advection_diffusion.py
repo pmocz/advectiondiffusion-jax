@@ -4,6 +4,7 @@ from scipy.sparse.linalg import splu
 from scipy.optimize import minimize
 
 import jax
+#jax.config.update("jax_enable_x64", True)   # turn this on to use double precision JAX
 import jax.numpy as jnp
 from jax import jit
 from jaxopt import ScipyBoundedMinimize
@@ -239,7 +240,7 @@ def main():
 
   # Carry out simulation with the optimized parameters
   print("=== JAX Approach =========================================================")
-  #grad_sim = jax.grad(loss_jax)  # compute the gradient of the loss function
+  #sim_grad = jax.grad(loss_jax)  # compute the gradient of the loss function
   start = timeit.default_timer()
   jbounds = [[0.0]*10, [np.pi]*10]
   optimizer = ScipyBoundedMinimize(fun=loss_jax, method='L-BFGS-B', tol = 1e-8, options={'disp': True})
