@@ -13,17 +13,18 @@ import timeit
 
 # Philip Mocz (2024)
 # Solve the advection-diffusion equation using a finite difference method
-# Plug it into an optimization problem to find the wind parameters that maximize pollution
-# Use either Nelder-Mead or autodiff (JAX) to solve the optimization problem
+# Plug it into an optimization problem to find the wind parameters that maximize pollution at the center of the domain
+# Use either Nelder-Mead (SciPy) or autodiff (JAX) to solve the optimization problem
 
 # Global variables
+W = 0.5
 diffusivity = 0.05
-t_stop = 0.25
-N = 81
+t_end = 0.25
+N = 41 # XXX 81
 M = 50
 dx = 1.0 / (N-1)
-dt = t_stop / M
-t = np.linspace(0, t_stop, M+1)
+dt = t_end / M
+t = np.linspace(0, t_end, M+1)
 
 
 # === Numpy version of the simulation ========================================
@@ -39,13 +40,8 @@ def initial_condition(x, y):
   return 2.0*np.exp(-100.0*((x-0.25)**2+(y-0.25)**2))+np.exp(-150.0*((x-0.65)**2+(y-0.4)**2))
 
 
-def do_simulation(x):
-  # Solve the advection-diffusion equation using a finite difference method
-  # Keep track of the pollution
-  W = x[0]
-  theta = x[1]
-
-  # Construct the matrix (D) for the linear system to be solved at each time step
+def build_matrix(theta):
+  # Construct the matrix (D) and its LU decomposition for the linear system to be solved at each time step
   D = np.eye(N**2, N**2)
   for i in range(1, N-1):
     for j in range(1, N-1):
@@ -58,6 +54,13 @@ def do_simulation(x):
   D = csc_matrix(D)  # sparse representation of the matrix
   B = splu(D)        # do an LU decomposition of the matrix
 
+  return B
+
+
+def do_simulation(x):
+  # Solve the advection-diffusion equation using a finite difference method
+  # Keep track of the pollution
+
   # Construct initial (t=0) solution
   xlin = np.linspace(0.0, 1.0, N)
   U = np.zeros(N**2)
@@ -65,16 +68,33 @@ def do_simulation(x):
     for j in range(1, N-1):
       U[index_function(i,j,N)] = initial_condition(xlin[i], xlin[j])
 
-  # Keep track of pollution
+  # Keep track of pollution as function of time
   pollution = np.zeros(M+1)
-  pollution[0] = U[index_function(N//2+1,N//2+1,N)]
+  ctr = index_function(N//2+1,N//2+1,N)
+  pollution[0] = U[ctr]
+
+  # Set the initial wind direction
+  update_wind_direction = False
+  i_wind = 0
+
+  # Build the initial matrix
+  B = build_matrix(x[i_wind])
 
   # Solve for the time evolution
   for i in range(M):
+
+    # update the wind direction every 10 time steps
+    update_wind_direction = (i>0 and i % 10 == 0)
+    if(update_wind_direction):
+      i_wind += 1
+      B = build_matrix(x[i_wind])
+
+    # solve the system
     U = B.solve(U)
-    pollution[i+1] = U[index_function(N//2+1,N//2+1,N)]
+    # record pollution at center of domain
+    pollution[i+1] = U[ctr]
   
-  pollution[M] = U[index_function(N//2+1,N//2+1,N)]
+  pollution[M] = U[ctr]
 
   pollution_total = np.trapz(pollution, t)
 
@@ -86,7 +106,7 @@ def loss(x, info):
   _, _, pollution_total = do_simulation(x)
 
   # display information
-  print('{0:4d}   {1: 3.6f}   {2: 3.6f} {3: 3.6f}'.format(info['Nfeval'], x[0], x[1], pollution_total))
+  print('{0:4d}   {1: 3.6f}   {2: 3.6f}   {3: 3.6f}   {4: 3.6f}   {5: 3.6f} {6: 3.6f}'.format(info['Nfeval'], x[0], x[1], x[2], x[3], x[4], pollution_total))
   info['Nfeval'] += 1
 
   return -pollution_total
@@ -105,29 +125,9 @@ def do_simulation_jax(x):
   # Solve the advection-diffusion equation with finite difference -- JAX version
   # Keep track of the pollution
 
-  W = x[0]
-  theta = x[1]
-
-  # Construct the matrix (D) for the linear system to be solved at each time step
-  main_diag = jnp.ones(N**2)  * dt*(1.0/dt + 4.0*diffusivity/dx**2)
-  off_diag1 = jnp.ones(N**2-1)* dt*( W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
-  off_diag2 = jnp.ones(N**2-1)* dt*(-W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
-  off_diag3 = jnp.ones(N**2-N)* dt*( W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
-  off_diag4 = jnp.ones(N**2-N)* dt*(-W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
-  D = jnp.diag(main_diag) + jnp.diag(off_diag1, 1) + jnp.diag(off_diag2, -1) + jnp.diag(off_diag3, N) + jnp.diag(off_diag4, -N)
-  bndry1 = jnp.arange(N)
-  bndry2 = (N-1)*N + jnp.arange(N)
-  bndry3 = jnp.arange(N)*N
-  bndry4 = jnp.arange(N)*N + N-1
-  bndry = jnp.concatenate((bndry1, bndry2, bndry3, bndry4))
-  D = D.at[bndry, :].set(0.0)
-  D = D.at[bndry, bndry].set(1.0)
-
-  B = jax.scipy.linalg.lu_factor(D)  # do an LU decomposition of the matrix
-
   # Construct initial (t=0) solution
-  x = jnp.linspace(0.0, 1.0, N)
-  X, Y = jnp.meshgrid(x, x)
+  xlin = jnp.linspace(0.0, 1.0, N)
+  X, Y = jnp.meshgrid(xlin, xlin)
   U = initial_condition_jax(X, Y)
   U = U.at[0,:].set(0.0)
   U = U.at[-1,:].set(0.0)
@@ -135,19 +135,63 @@ def do_simulation_jax(x):
   U = U.at[:,-1].set(0.0)
   U = U.flatten()
 
-  # Keep track of pollution
+  # Keep track of pollution as function of time
   ctr = (N//2+1)*N + N//2+1
   pollution = jnp.zeros(M+1)
   pollution = pollution.at[0].set(U[ctr])
 
+  # Define boundary indices
+  bndry1 = jnp.arange(N)
+  bndry2 = (N-1)*N + jnp.arange(N)
+  bndry3 = jnp.arange(N)*N
+  bndry4 = jnp.arange(N)*N + N-1
+  bndry = jnp.concatenate((bndry1, bndry2, bndry3, bndry4))
+
+  # Set the initial wind direction
+  update_wind_direction = False
+  i_wind = 0
+  theta = x[i_wind]
+
+  # Construct the matrix (D) and its LU decomposition for the linear system to be solved at each time step
+  main_diag = jnp.ones(N**2)  * dt*(1.0/dt + 4.0*diffusivity/dx**2)
+  off_diag1 = jnp.ones(N**2-1)* dt*( W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
+  off_diag2 = jnp.ones(N**2-1)* dt*(-W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
+  off_diag3 = jnp.ones(N**2-N)* dt*( W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
+  off_diag4 = jnp.ones(N**2-N)* dt*(-W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
+  
+  D = jnp.diag(main_diag) + jnp.diag(off_diag1, 1) + jnp.diag(off_diag2, -1) + jnp.diag(off_diag3, N) + jnp.diag(off_diag4, -N)
+  D = D.at[bndry, :].set(0.0)
+  D = D.at[bndry, bndry].set(1.0)
+
+  B = jax.scipy.linalg.lu_factor(D)  # do an LU decomposition of the matrix
+
   # Solve for the time evolution
   for i in range(M):
+    # update the wind direction every 10 time steps
+    update_wind_direction = (i>0 and i % 10 == 0)
+    if(update_wind_direction):
+      i_wind += 1
+      theta = x[i_wind]
+      off_diag1 = jnp.ones(N**2-1)* dt*( W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
+      off_diag2 = jnp.ones(N**2-1)* dt*(-W*jnp.cos(theta)/(2.0*dx) - diffusivity/dx**2)
+      off_diag3 = jnp.ones(N**2-N)* dt*( W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
+      off_diag4 = jnp.ones(N**2-N)* dt*(-W*jnp.sin(theta)/(2.0*dx) - diffusivity/dx**2)
+
+      D = jnp.diag(main_diag) + jnp.diag(off_diag1, 1) + jnp.diag(off_diag2, -1) + jnp.diag(off_diag3, N) + jnp.diag(off_diag4, -N)
+      D = D.at[bndry, :].set(0.0)
+      D = D.at[bndry, bndry].set(1.0)
+
+      B = jax.scipy.linalg.lu_factor(D)  # do an LU decomposition of the matrix
+
+    # solve the system
     U = jax.scipy.linalg.lu_solve(B, U)
+
+    # record pollution at center of domain
     pollution = pollution.at[i+1].set(U[ctr])
 
   pollution = pollution.at[M].set(U[ctr])
 
-  t = jnp.linspace(0, t_stop, M+1)
+  t = jnp.linspace(0, t_end, M+1)
   pollution_total = jnp.trapezoid(pollution, t)
 
   return U, pollution, pollution_total
@@ -155,7 +199,7 @@ def do_simulation_jax(x):
 
 @jit
 def loss_jax(x):
-  # loss function that wraps the simulation (jax version)
+  # loss function that wraps the simulation
   _, _, pollution_total = do_simulation_jax(x)
 
   return -pollution_total
@@ -166,31 +210,36 @@ def loss_jax(x):
 def main():
 
   # Wind parameters (initial guess)
-  W = 1.0
-  theta = np.pi/2.0
+  x0 = [np.pi/2.0] * 5
   
   # Optimize the wind parameters to find which values maximize the pollution
-  x0 = np.array([W, theta])
-  bounds = [(0, 3), (0, np.pi)]
-  print("Numpy Approach =======================")
+  bounds = [(0.0, np.pi)] * 5
+  print("=== Numpy Approach =======================")
   start = timeit.default_timer()
-  wind = minimize(loss, x0, args=({'Nfeval':0},), method='Nelder-Mead', tol=1e-8, bounds=bounds)
+  sol = minimize(loss, x0, args=({'Nfeval':0},), method='Nelder-Mead', tol=1e-8, bounds=bounds)
   print("Optimization process took:", timeit.default_timer() - start, "seconds")
-  print('Optimized wind parameters:', wind.x)
+  print('Optimized wind parameters:', sol.x)
+
+  # Re-run the simulation with the optimized parameters and print the level of pollution
+  start = timeit.default_timer()
+  U, pollution, pollution_total = do_simulation(sol.x)
+  print("Single Numpy run took:", timeit.default_timer() - start, "seconds")
+  print('Total pollution:', pollution_total)
 
   # Carry out simulation with the optimized parameters
-  print("JAX Approach =========================")
+  print("=== JAX Approach =========================")
   start = timeit.default_timer()
-  jbounds = ((0, 0), (3, np.pi))
+  jbounds = [[0.0]*5, [np.pi]*5]
   optimizer = ScipyBoundedMinimize(fun=loss_jax, method='L-BFGS-B', tol = 1e-8)
-  sol = optimizer.run(init_params=x0, bounds=jbounds)
+  sol_jax = optimizer.run(init_params=x0, bounds=jbounds)
   print("Optimization process took:", timeit.default_timer() - start, "seconds")
-  print('Optimized wind parameters:', sol.params)
+  print(sol_jax)
+  print('Optimized wind parameters:', sol_jax.params)
 
-  # Re-run the simulation with the optimized parameters
-  U, pollution, pollution_total = do_simulation_jax(sol.params)
-
-  # Print the level of pollution
+  # Re-run the simulation with the optimized parameters and print the level of pollution
+  start = timeit.default_timer()
+  U, pollution, pollution_total = do_simulation_jax(sol_jax.params)
+  print("Single JAX run took:", timeit.default_timer() - start, "seconds")
   print('Total pollution:', pollution_total)
 
   # Plot the pollution as a function of time
@@ -198,11 +247,11 @@ def main():
   plt.plot(t, pollution, 'b-')
   plt.xlabel('Time')
   plt.ylabel('Pollution')
-  plt.xlim(0, t_stop)
-  plt.ylim(0.0, 0.5)
+  plt.xlim(0, t_end)
+  plt.ylim(0.0, 0.16)
   plt.show()
 
-  # Plot the solution
+  # Plot the solution of the 2D pollution field
   fig = plt.figure(figsize=(4,4), dpi=120)
   U_plot = np.zeros((N, N))
   for i in range(N):
