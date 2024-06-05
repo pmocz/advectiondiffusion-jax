@@ -88,8 +88,8 @@ def do_simulation(x):
   # Solve for the time evolution
   for i in range(M):
 
-    # update the wind direction every 10 time steps
-    update_wind_direction = (i>0 and i % 10 == 0)
+    # update the wind direction every 5 time steps
+    update_wind_direction = (i>0 and i % 5 == 0)
     if(update_wind_direction):
       i_wind += 1
       B = build_matrix(x[i_wind])
@@ -175,8 +175,8 @@ def do_simulation_jax(x):
 
   # Solve for the time evolution
   for i in range(M):
-    # update the wind direction every 10 time steps
-    update_wind_direction = (i>0 and i % 10 == 0)
+    # update the wind direction every 5 time steps
+    update_wind_direction = (i>0 and i % 5 == 0)
     if(update_wind_direction):
       i_wind += 1
       theta = x[i_wind]
@@ -220,8 +220,8 @@ def loss_jax(x):
 def main():
 
   # Wind parameters (initial guess)
-  x0 = [np.pi/2.0] * 5
-  bounds = [(0.0, np.pi)] * 5
+  x0 = [np.pi/2.0] * 10
+  bounds = [(0.0, np.pi)] * 10
   
   # Optimize the wind parameters to find which values maximize the pollution
   print("=== Numpy Approach =======================================================")
@@ -241,7 +241,7 @@ def main():
   print("=== JAX Approach =========================================================")
   #grad_sim = jax.grad(loss_jax)  # compute the gradient of the loss function
   start = timeit.default_timer()
-  jbounds = [[0.0]*5, [np.pi]*5]
+  jbounds = [[0.0]*10, [np.pi]*10]
   optimizer = ScipyBoundedMinimize(fun=loss_jax, method='L-BFGS-B', tol = 1e-8, options={'disp': True})
   sol_jax = optimizer.run(init_params=x0, bounds=jbounds)
   print("Optimization process took:", timeit.default_timer() - start, "seconds")
