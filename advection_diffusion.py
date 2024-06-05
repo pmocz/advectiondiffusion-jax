@@ -113,7 +113,7 @@ def loss(x, info):
   _, _, pollution_total = do_simulation(x)
 
   # display information at each function evaluation
-  print('{0:4d}   {1: 3.6f}   {2: 3.6f}   {3: 3.6f}   {4: 3.6f}   {5: 3.6f} {6: 3.6f}'.format(info['Nfeval'], x[0], x[1], x[2], x[3], x[4], pollution_total))
+  print('{0:4d}  {1: 3.4f}  {2: 3.4f}  {3: 3.4f}  {4: 3.4f}  {5: 3.4f}  {6: 3.4f}  {7: 3.4f}  {8: 3.4f}  {9: 3.4f}  {10: 3.4f} {6: 3.6f}'.format(info['Nfeval'], x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[8], x[9], pollution_total))
   info['Nfeval'] += 1
 
   return -pollution_total
