@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 from jax import jit
 from jaxopt import ScipyBoundedMinimize
+from jax.experimental import sparse
 
 import matplotlib.pyplot as plt
 import timeit
@@ -24,7 +25,7 @@ Use either gradient-free Nelder-Mead (Numpy/SciPy) or autodiff (JAX) to solve th
 W = 0.5
 diffusivity = 0.05
 t_end = 0.25
-N = 41
+N = 81
 M = 50
 dx = 1.0 / (N-1)
 dt = t_end / M
@@ -167,8 +168,10 @@ def do_simulation_jax(x):
   D = jnp.diag(main_diag) + jnp.diag(off_diag1, 1) + jnp.diag(off_diag2, -1) + jnp.diag(off_diag3, N) + jnp.diag(off_diag4, -N)
   D = D.at[bndry, :].set(0.0)
   D = D.at[bndry, bndry].set(1.0)
-
-  B = jax.scipy.linalg.lu_factor(D)  # do an LU decomposition of the matrix
+  
+  D = sparse.BCOO.fromdense(D, nse=5*N*N)
+  # Note: JAX does not support LU decomposition of sparse matrices, so we use a CG solver (an iterative method) instead
+  #B = jax.scipy.linalg.lu_factor(D)  # do an LU decomposition of the matrix
 
   # Solve for the time evolution
   for i in range(M):
@@ -186,10 +189,12 @@ def do_simulation_jax(x):
       D = D.at[bndry, :].set(0.0)
       D = D.at[bndry, bndry].set(1.0)
 
-      B = jax.scipy.linalg.lu_factor(D)  # do an LU decomposition of the matrix
+      D = sparse.BCOO.fromdense(D, nse=5*N*N)
+      #B = jax.scipy.linalg.lu_factor(D)  # do an LU decomposition of the matrix
 
     # solve the system
-    U = jax.scipy.linalg.lu_solve(B, U)
+    #U = jax.scipy.linalg.lu_solve(B, U)
+    U, _ = jax.scipy.sparse.linalg.cg(D, U)
 
     # record pollution at center of domain
     pollution = pollution.at[i+1].set(U[ctr])
