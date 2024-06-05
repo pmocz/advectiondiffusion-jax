@@ -18,14 +18,14 @@ Philip Mocz (2024), @PMocz
 
 Solve the advection-diffusion equation using a finite difference method
 Plug it into an optimization problem to find the wind parameters that maximize pollution at the center of the domain
-Use either gradient-free Nelder-Mead (Numpy/SciPy) or autodiff (JAX) to solve the optimization problem
+Use either 'L-BFGS-B' method with finite difference gradient estimates (Numpy/SciPy) or autodiff (JAX) to solve the optimization problem
 """
 
 # Global variables
 W = 0.5
 diffusivity = 0.05
 t_end = 0.25
-N = 81
+N = 61
 M = 50
 dx = 1.0 / (N-1)
 dt = t_end / M
@@ -194,7 +194,7 @@ def do_simulation_jax(x):
 
     # solve the system
     #U = jax.scipy.linalg.lu_solve(B, U)
-    U, _ = jax.scipy.sparse.linalg.cg(D, U)
+    U, _ = jax.scipy.sparse.linalg.cg(D, U, x0=U, tol=1e-8)
 
     # record pollution at center of domain
     pollution = pollution.at[i+1].set(U[ctr])
@@ -226,7 +226,7 @@ def main():
   # Optimize the wind parameters to find which values maximize the pollution
   print("=== Numpy Approach =======================================================")
   start = timeit.default_timer()
-  sol = minimize(loss, x0, args=({'Nfeval':0},), method='Nelder-Mead', tol=1e-8, bounds=bounds, options={'disp': True} )
+  sol = minimize(loss, x0, args=({'Nfeval':0},), method='L-BFGS-B', tol=1e-8, bounds=bounds, options={'disp': True} )
   print("Optimization process took:", timeit.default_timer() - start, "seconds")
   print('Number of iterations:', sol.nit)
   print('Optimized wind parameters:', '\033[1m', sol.x, '\033[0m')
@@ -234,11 +234,12 @@ def main():
   # Re-run the simulation with the optimized parameters and print the level of pollution
   start = timeit.default_timer()
   U, pollution, pollution_total = do_simulation(sol.x)
-  print("Single Numpy run took:", timeit.default_timer() - start, "seconds")
+  print("Single simulation eval took:", timeit.default_timer() - start, "seconds")
   print('Total pollution:', pollution_total)
 
   # Carry out simulation with the optimized parameters
   print("=== JAX Approach =========================================================")
+  #grad_sim = jax.grad(loss_jax)  # compute the gradient of the loss function
   start = timeit.default_timer()
   jbounds = [[0.0]*5, [np.pi]*5]
   optimizer = ScipyBoundedMinimize(fun=loss_jax, method='L-BFGS-B', tol = 1e-8, options={'disp': True})
@@ -250,7 +251,7 @@ def main():
   # Re-run the simulation with the optimized parameters and print the level of pollution
   start = timeit.default_timer()
   U, pollution, pollution_total = do_simulation_jax(sol_jax.params)
-  print("Single JAX run took:", timeit.default_timer() - start, "seconds")
+  print("Single simulation eval took:", timeit.default_timer() - start, "seconds")
   print('Total pollution:', pollution_total)
 
   # Plot the pollution as a function of time
