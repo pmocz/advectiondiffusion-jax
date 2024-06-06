@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import timeit
 
 """
-Create Your Own Finite Difference Automatic differentiation Simulation (With Python/JAX)
+Create Your Own Finite Difference Automatic Differentiation Simulation (With Python/JAX)
 Philip Mocz (2024), @PMocz
 
 Solve the advection-diffusion equation using a finite difference method
