@@ -1,7 +1,7 @@
 # advectiondiffusion-jax
 Solve the advection diffusion equations looped into an optimization problem with JAX/autodiff
 
-## Create Your Own Finite Difference Automatic Differentiation Simulation (With Python/JAX)
+## Create Your Own Automatically Differentiable Simulation (With Python/JAX)
 
 ### Philip Mocz (2024) Flatiron Institute, [@PMocz](https://twitter.com/PMocz)
 
