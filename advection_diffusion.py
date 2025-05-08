@@ -127,7 +127,7 @@ def loss(x, info):
 
     # display information at each function evaluation
     print(
-        "{0:4d}  {1: 3.4f}  {2: 3.4f}  {3: 3.4f}  {4: 3.4f}  {5: 3.4f}  {6: 3.4f}  {7: 3.4f}  {8: 3.4f}  {9: 3.4f}  {10: 3.4f} {6: 3.6f}".format(
+        "{0:4d}  {1: 3.4f}  {2: 3.4f}  {3: 3.4f}  {4: 3.4f}  {5: 3.4f}  {6: 3.4f}  {7: 3.4f}  {8: 3.4f}  {9: 3.4f}  {10: 3.4f} {11: 3.6f}".format(
             info["Nfeval"],
             x[0],
             x[1],
